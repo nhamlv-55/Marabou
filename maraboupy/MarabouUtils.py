@@ -14,7 +14,7 @@ MarabouUtils contains supporting Maraboupy code that doesn't fit in other files
 '''
 
 from maraboupy import MarabouCore
-
+from typing import List, Tuple
 class Equation:
     """Python class to conveniently represent :class:`~maraboupy.MarabouCore.Equation`
 
@@ -47,3 +47,24 @@ class Equation:
         """
         self.addendList += [(c, x)]
 
+    def __str__(self) -> str:
+        #build sign
+        sign: str
+        if self.EquationType == MarabouCore.Equation.LE:
+            sign = "<="
+        elif self.EquationType == MarabouCore.Equation.GE:
+            sign = ">="
+        elif self.EquationType == MarabouCore.Equation.EQ:
+            sign = "=="
+        else:
+            sign = "?"
+        #build rhs
+        rhs:str = str(self.scalar)
+        #build lhs
+        terms: List[str] = []
+        lhs:str = ""
+        addend: Tuple[int, int]
+        for addend in self.addendList:
+            terms.append("{}*var_{} ".format(addend[0], addend[1]))
+        lhs = " + ".join(terms)
+        return "{} {} {}".format(lhs, sign, rhs)
