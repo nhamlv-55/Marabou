@@ -21,7 +21,6 @@ from maraboupy import MarabouUtils
 from maraboupy import MarabouNetwork
 from onnx import TensorProto
 import itertools
-
 class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
     """Constructs a MarabouNetworkONNX object from an ONNX file
 
@@ -36,19 +35,26 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
     def __init__(self, filename, inputNames=None, outputNames=None):
         super().__init__()
         self.readONNX(filename, inputNames, outputNames)
+    def render_dot(self, name:str ='output')->None:
+        self.dotGraph.render(name)
 
+    def add_dot_node(self, name: str, label: str):
+        self.dotGraph.node(name, "{}:\n{}".format(name, label))
+        print("Add {}:{} to dotgraph".format(name, label))
+    
     def clear(self):
         """Reset values to represent empty network
         """
         super().clear()
         self.madeGraphEquations = []
         self.varMap = dict()
+        self.gradVarMap = dict() 
         self.constantMap = dict()
         self.shapeMap = dict()
+
         self.inputNames = None
         self.outputNames = None
         self.graph = None
-        
     def readONNX(self, filename, inputNames, outputNames, reindexOutputVars=True):
         """Read an ONNX file and create a MarabouNetworkONNX object
 
@@ -105,22 +111,26 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         
         :meta private:
         """
+
         # Add shapes for the graph's inputs
         for node in self.graph.input:
             self.shapeMap[node.name] = list([dim.dim_value if dim.dim_value > 0 else 1 for dim in node.type.tensor_type.shape.dim])
-            
+
+            # Init dot nodes for input
+            self.add_dot_node(node.name, node.name)
             # If we find one of the specified inputs, create new variables
             if node.name in self.inputNames:
                 self.madeGraphEquations += [node.name]
                 self.foundnInputFlags += 1
                 self.makeNewVariables(node.name)
+                self.makeNewGradVariables(node.name)
                 self.inputVars += [np.array(self.varMap[node.name])] 
                 
         # Add shapes for constants
         for node in self.graph.initializer:
             self.shapeMap[node.name] = list(node.dims)
             self.madeGraphEquations += [node.name]
-            
+        
         # Recursively create remaining shapes and equations as needed
         for outputName in self.outputNames:
             self.makeGraphEquations(outputName, True)
@@ -143,6 +153,7 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
             # equations for its inputs. However, we still need to call makeMarabouEquations in order to
             # compute shapes. We just need to set the makeEquations flag to false
             makeEquations = False
+
         self.madeGraphEquations += [nodeName]
         
         # Recursively call makeGraphEquations, then call makeMarabouEquations
@@ -161,6 +172,7 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         # Create new variables when we find one of the inputs
         if nodeName in self.inputNames:
             self.makeNewVariables(nodeName)
+            self.makeNewGradVariables(nodeName)
             self.inputVars += [np.array(self.varMap[nodeName])]  
             
     def makeMarabouEquations(self, nodeName, makeEquations):
@@ -173,6 +185,12 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         :meta private:
         """
         node = self.getNode(nodeName)
+        self.add_dot_node(nodeName, node.name)
+        inNodeNames = self.getInputNodes(nodeName)
+        for iname in inNodeNames:
+            inputNode = self.getNode(iname)
+            self.add_dot_node(iname, inputNode.name)
+            self.dotGraph.edge(iname, nodeName)
         if node.op_type == 'Constant':
             self.constant(node)
         elif node.op_type == 'Identity': 
@@ -221,6 +239,32 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         assert len(nodes) == 1
         return nodes[0]
     
+    def addVariablesToDotGraph(self, v: np.ndarray, prefix:str, nodeName: str)->None:
+        v = v.tolist()
+        for variable in v:
+            self.add_dot_node(prefix+str(variable), nodeName)
+
+    def makeNewGradVariables(self, nodeName):
+        """Assuming the node's shape is known, return a set of new variables in the same shape
+
+        Args:
+            nodeName (str): Name of node
+
+        Returns:
+            (numpy array): Array of variable numbers 
+
+        :meta private:
+        """
+        assert nodeName not in self.gradVarMap
+        shape = self.shapeMap[nodeName]
+        size = np.prod(shape)
+        v = np.array([self.getNewGradVariable() for _ in range(size)]).reshape(shape)
+        self.addVariablesToDotGraph(v, prefix="g", nodeName=nodeName)
+        print(nodeName, v)
+        self.gradVarMap[nodeName] = v
+        assert all([np.equal(np.mod(i, 1), 0) for i in v.reshape(-1)]) # check if integers
+        return v
+
     def makeNewVariables(self, nodeName):
         """Assuming the node's shape is known, return a set of new variables in the same shape
 
@@ -236,10 +280,11 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         shape = self.shapeMap[nodeName]
         size = np.prod(shape)
         v = np.array([self.getNewVariable() for _ in range(size)]).reshape(shape)
+        self.addVariablesToDotGraph(v, prefix="v", nodeName=nodeName)
         self.varMap[nodeName] = v
         assert all([np.equal(np.mod(i, 1), 0) for i in v.reshape(-1)]) # check if integers
         return v
-        
+
     def getInputNodes(self, nodeName):
         """Get names of nodes that are inputs to the given node
 
@@ -648,9 +693,11 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
 
         # Create new variables
         outputVariables = self.makeNewVariables(nodeName)
-        # Generate equations
+
+        # Generate forward equations
         for i in range(shape1[0]):
             for j in range(shape2[1]):
+                #forward equation
                 e = MarabouUtils.Equation()
                 for k in range(shape1[1]):
                     e.addAddend(input2[k][j]*alpha, input1[i][k])
@@ -708,11 +755,12 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
 
         # Create new variables
         outputVariables = self.makeNewVariables(nodeName)
-
+        gradVariables = self.makeNewGradVariables(nodeName)
         # Pad the output if needed (matrix-matrix multiplication)
         if len(outputVariables.shape) == 1 and len(shape2) > 1:
             outputVariables = outputVariables.reshape([1, outputVariables.shape[0]])
-
+            # do the same reshape for the grad variables
+            gradVariables = gradVariables.reshape([1, gradVariables.shape[0]])
         # Generate equations
         for i in range(shape1[0]):
             # Differentiate between matrix-vector multiplication and matrix-matrix multiplication
@@ -722,9 +770,10 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                     for k in range(shape1[1]):
                         if firstInputConstant:
                             e.addAddend(input1[i][k], input2[k][j])
+                            self.dotGraph.edge("v"+str(input2[k][j]), "v"+str(outputVariables[i][j]))
                         else:
                             e.addAddend(input2[k][j], input1[i][k])
-
+                            self.dotGraph.edge("v"+str(input1[i][k]), "v"+str(outputVariables[i][j]))
                     # Put output variable as the last addend last
                     e.addAddend(-1, outputVariables[i][j])
                     e.setScalar(0.0)
@@ -734,9 +783,11 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                 for k in range(shape1[1]):
                     if firstInputConstant:
                         e.addAddend(input1[i][k], input2[k])
+                        self.dotGraph.edge("v"+str(input1[i][k]), "v"+str(outputVariables[i]))
                     else:
                         e.addAddend(input2[k], input1[i][k])
-
+                        #add edge to dot graph
+                        self.dotGraph.edge("v"+str(input2[k]), "v"+str(outputVariables[i]))
                 # Put output variable as the last addend last
                 e.addAddend(-1, outputVariables[i])
                 e.setScalar(0.0)
@@ -895,11 +946,13 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         # Get variables
         inputVars = self.varMap[inputName].reshape(-1)
         outputVars = self.makeNewVariables(nodeName).reshape(-1)
+        self.makeNewGradVariables(nodeName).reshape(-1)
         assert len(inputVars) == len(outputVars)
 
         # Generate equations
         for i in range(len(inputVars)):
             self.addRelu(inputVars[i], outputVars[i])
+            self.dotGraph.edge("v"+str(inputVars[i]), "v"+str(outputVars[i]))
         for f in outputVars:
             self.setLowerBound(f, 0.0)
 
