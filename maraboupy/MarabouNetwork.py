@@ -1,3 +1,4 @@
+# type: ignore
 '''
 Top contributors (to current version):
     - Christopher Lazarus
@@ -19,7 +20,7 @@ from maraboupy import MarabouCore
 from maraboupy import MarabouUtils
 
 import numpy as np
-
+import graphviz as gv
 
 class MarabouNetwork:
     """Abstract class representing general Marabou network
@@ -42,6 +43,8 @@ class MarabouNetwork:
         """
         self.clear()
 
+
+
     def clear(self):
         """Reset values to represent empty network
         """
@@ -53,6 +56,16 @@ class MarabouNetwork:
         self.absList = []
         self.signList = []
         self.disjunctionList = []
+
+        #dotgraph
+        self.dotGraph = gv.Digraph()
+
+        #constraints for gradient
+        self.gradEquList = []
+        self.gradReluList = []
+
+        
+
         self.lowerBounds = dict()
         self.upperBounds = dict()
         self.inputVars = []
@@ -76,6 +89,10 @@ class MarabouNetwork:
             x (:class:`~maraboupy.MarabouUtils.Equation`): New equation to add
         """
         self.equList += [x]
+
+    def addGradEquation(self, x: MarabouUtils.Equation):
+        self.gradEquList += [x]
+
 
     def setLowerBound(self, x, v):
         """Function to set lower bound for variable
