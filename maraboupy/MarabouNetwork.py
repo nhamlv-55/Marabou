@@ -49,6 +49,7 @@ class MarabouNetwork:
         """Reset values to represent empty network
         """
         self.numVars = 0
+        self.numGradVars = 0
         self.equList = []
         self.reluList = []
         self.sigmoidList = []
@@ -81,6 +82,17 @@ class MarabouNetwork:
         """
         self.numVars += 1
         return self.numVars - 1
+
+    def getNewGradVariable(self):
+        """Function to create a new variable
+
+        Returns:
+            (int): New variable number
+
+        :meta private:
+        """
+        self.numGradVars += 1
+        return self.numGradVars - 1
 
     def addEquation(self, x):
         """Function to add new equation to the network
