@@ -65,8 +65,8 @@ class MarabouNetwork:
         #constraints for gradient
         self.gradEquList = []
         self.gradReluList = []
-
-        
+        self.accumulatedGrad = dict()
+        self.gradVarMap = dict() 
 
         self.lowerBounds = dict()
         self.upperBounds = dict()
@@ -144,6 +144,15 @@ class MarabouNetwork:
             v2 (int): Variable representing output of Relu
         """
         self.reluList += [(v1, v2)]
+
+    def addGradRelu(self, v1, v2):
+        """Function to add a new Relu constraint
+
+        Args:
+            v1 (int): Variable representing input of Relu
+            v2 (int): Variable representing output of Relu
+        """
+        self.gradReluList += [(v1, v2)]
 
     def addSigmoid(self, v1, v2):
         """Function to add a new Sigmoid constraint
@@ -249,8 +258,10 @@ class MarabouNetwork:
         Returns:
             :class:`~maraboupy.MarabouCore.InputQuery`
         """
+        assert self.numVars == self.numGradVars
+
         ipq = MarabouCore.InputQuery()
-        ipq.setNumberOfVariables(self.numVars)
+        ipq.setNumberOfVariables(self.numVars*2)
 
         i = 0
         for inputVarArray in self.inputVars:
@@ -263,7 +274,7 @@ class MarabouNetwork:
             for outputVar in outputVarArray.flatten():
                 ipq.markOutputVariable(outputVar, i)
                 i+=1
-
+        #forward equations
         for e in self.equList:
             eq = MarabouCore.Equation(e.EquationType)
             for (c, v) in e.addendList:
@@ -303,6 +314,34 @@ class MarabouNetwork:
         for disjunction in self.disjunctionList:
             MarabouCore.addDisjunctionConstraint(ipq, disjunction)
 
+        #backward equations
+        #shift gradvars so they wont conflict with normal vars
+        offset = self.numVars
+
+
+        #set linear grad constraints
+        for gradv in self.accumulatedGrad:
+            addendList = self.accumulatedGrad[gradv]
+            eq = MarabouUtils.Equation(MarabouCore.Equation.EQ)
+            if len(addendList)==0: continue
+            for (v, c) in addendList:
+                eq.addAddend(c,int(v)+offset)
+            eq.addAddend(-1, int(gradv)+offset)
+            eq.setScalar(0)
+            print(eq)
+            ipq.addEquation(eq.toCoreEquation())
+        #set Relu constraints: XXX: a placeholder just for now
+        for r in self.gradReluList:
+            eq = MarabouUtils.Equation(MarabouCore.Equation.EQ)
+            eq.addAddend(-1, r[0]+offset)
+            eq.addAddend(1, r[1]+offset)
+            eq.setScalar(0)
+            print("placeholder relu eq", eq)
+            ipq.addEquation(eq.toCoreEquation())
+
+        #done with adding backward equations
+        #start setting bounds
+        #set bounds for forward variables
         for l in self.lowerBounds:
             assert l < self.numVars
             ipq.setLowerBound(l, self.lowerBounds[l])
@@ -310,7 +349,14 @@ class MarabouNetwork:
         for u in self.upperBounds:
             assert u < self.numVars
             ipq.setUpperBound(u, self.upperBounds[u])
-            
+        
+        #set output grad bounds to either 1 or 0 
+        OUTGRAD = 0
+        for outputName in self.outputNames:
+            gradOutArray = self.gradVarMap[outputName]
+            for gradv in gradOutArray:
+                ipq.setLowerBound(int(gradv)+offset, OUTGRAD)
+                ipq.setUpperBound(int(gradv)+offset, OUTGRAD)           
         return ipq
 
     def solve(self, filename="", verbose=True, options=None):
