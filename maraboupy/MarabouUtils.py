@@ -26,8 +26,8 @@ class Equation:
     def __init__(self, EquationType=MarabouCore.Equation.EQ):
         """Construct empty equation
         """
-        self.addendList = []
-        self.scalar = None
+        self.addendList:List[Tuple[float, int]] = []
+        self.scalar:float = float('-inf')
         self.EquationType = EquationType
 
     def setScalar(self, x):
@@ -46,7 +46,12 @@ class Equation:
             x (int): variable number of variable in addend
         """
         self.addendList += [(c, x)]
-
+    def toCoreEquation(self)->MarabouCore.Equation:
+        eq = MarabouCore.Equation(self.EquationType)
+        for (c, v) in self.addendList:
+            eq.addAddend(c, v)
+        eq.setScalar(self.scalar)
+        return eq
     def __str__(self) -> str:
         #build sign
         sign: str
