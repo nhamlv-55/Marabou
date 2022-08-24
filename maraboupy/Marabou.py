@@ -27,6 +27,7 @@ except ImportError:
     warnings.warn("Tensorflow parser is unavailable because tensorflow package is not installed")
 try:
     from maraboupy.MarabouNetworkONNX import *
+    from maraboupy.MarabouNetworkONNXPlus import MarabouNetworkONNXPlus
 except ImportError:
     warnings.warn("ONNX parser is unavailable because onnx or onnxruntime packages are not installed")
 
@@ -74,6 +75,19 @@ def read_onnx(filename, inputNames=None, outputNames=None):
     """
     return MarabouNetworkONNX(filename, inputNames, outputNames)
 
+def read_onnx_plus(filename, inputNames=None, outputNames=None):
+    """Constructs a MarabouNetworkONNX object from an ONNX file
+
+    Args:
+        filename (str): Path to the ONNX file
+        inputNames (list of str, optional): List of node names corresponding to inputs
+        outputNames (list of str, optional): List of node names corresponding to outputs
+
+    Returns:
+        :class:`~maraboupy.MarabouNetworkONNX.MarabouNetworkONNX`
+    """
+    return MarabouNetworkONNXPlus(filename, inputNames, outputNames)
+    
 def load_query(filename):
     """Load the serialized inputQuery from the given filename
 
