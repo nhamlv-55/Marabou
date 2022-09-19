@@ -12,6 +12,7 @@ directory for licensing information.
 MarabouNetworkONNX represents neural networks with piecewise linear constraints derived from the ONNX format
 '''
 
+from collections import defaultdict
 import numpy as np
 import onnx
 import onnxruntime
@@ -48,7 +49,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         super().clear()
         self.madeGraphEquations = []
         self.varMap = dict()
-        self.gradVarMap = dict() 
         self.constantMap = dict()
         self.shapeMap = dict()
 
@@ -123,7 +123,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                 self.madeGraphEquations += [node.name]
                 self.foundnInputFlags += 1
                 self.makeNewVariables(node.name)
-                self.makeNewGradVariables(node.name)
                 self.inputVars += [np.array(self.varMap[node.name])] 
                 
         # Add shapes for constants
@@ -172,7 +171,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         # Create new variables when we find one of the inputs
         if nodeName in self.inputNames:
             self.makeNewVariables(nodeName)
-            self.makeNewGradVariables(nodeName)
             self.inputVars += [np.array(self.varMap[nodeName])]  
             
     def makeMarabouEquations(self, nodeName, makeEquations):
@@ -243,27 +241,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         v = v.tolist()
         for variable in v:
             self.add_dot_node(prefix+str(variable), nodeName)
-
-    def makeNewGradVariables(self, nodeName):
-        """Assuming the node's shape is known, return a set of new variables in the same shape
-
-        Args:
-            nodeName (str): Name of node
-
-        Returns:
-            (numpy array): Array of variable numbers 
-
-        :meta private:
-        """
-        assert nodeName not in self.gradVarMap
-        shape = self.shapeMap[nodeName]
-        size = np.prod(shape)
-        v = np.array([self.getNewGradVariable() for _ in range(size)]).reshape(shape)
-        self.addVariablesToDotGraph(v, prefix="g", nodeName=nodeName)
-        print(nodeName, v)
-        self.gradVarMap[nodeName] = v
-        assert all([np.equal(np.mod(i, 1), 0) for i in v.reshape(-1)]) # check if integers
-        return v
 
     def makeNewVariables(self, nodeName):
         """Assuming the node's shape is known, return a set of new variables in the same shape
@@ -755,13 +732,10 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
 
         # Create new variables
         outputVariables = self.makeNewVariables(nodeName)
-        gradVariables = self.makeNewGradVariables(nodeName)
         # Pad the output if needed (matrix-matrix multiplication)
         if len(outputVariables.shape) == 1 and len(shape2) > 1:
             outputVariables = outputVariables.reshape([1, outputVariables.shape[0]])
-            # do the same reshape for the grad variables
-            gradVariables = gradVariables.reshape([1, gradVariables.shape[0]])
-        # Generate equations
+        # Generate forward equations
         for i in range(shape1[0]):
             # Differentiate between matrix-vector multiplication and matrix-matrix multiplication
             if len(shape2)>1:
@@ -770,9 +744,13 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                     for k in range(shape1[1]):
                         if firstInputConstant:
                             e.addAddend(input1[i][k], input2[k][j])
+                            #accumulate grad
+                            self.accumulatedGrad[input2[k][j]].append((outputVariables[i][j], input1[i][k]))
                             self.dotGraph.edge("v"+str(input2[k][j]), "v"+str(outputVariables[i][j]))
                         else:
                             e.addAddend(input2[k][j], input1[i][k])
+                            print(input1[i][k])
+                            self.accumulatedGrad[input1[i][k]].append((outputVariables[i][j], input2[k][j]))
                             self.dotGraph.edge("v"+str(input1[i][k]), "v"+str(outputVariables[i][j]))
                     # Put output variable as the last addend last
                     e.addAddend(-1, outputVariables[i][j])
@@ -792,6 +770,7 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                 e.addAddend(-1, outputVariables[i])
                 e.setScalar(0.0)
                 self.addEquation(e)
+
 
     def mulEquations(self, node, makeEquations):
         nodeName = node.output[0]
@@ -946,7 +925,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         # Get variables
         inputVars = self.varMap[inputName].reshape(-1)
         outputVars = self.makeNewVariables(nodeName).reshape(-1)
-        self.makeNewGradVariables(nodeName).reshape(-1)
         assert len(inputVars) == len(outputVars)
 
         # Generate equations
@@ -1012,13 +990,18 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
 
         :meta private:
         """
+        new_var_id:int
         if var < numInVars:
-            return var
+            new_var_id = var
+            return new_var_id
         if var in outVars:
             ind = np.where(var == outVars)[0][0]
-            return newOutVars[ind]
-        return var + len([outVar for outVar in outVars if outVar > var])
-    
+            new_var_id =  newOutVars[ind]
+            return new_var_id
+        new_var_id = var + len([outVar for outVar in outVars if outVar > var])
+        return new_var_id    
+
+
     def reassignOutputVariables(self):
         """Reassign output variables so output variable numbers follow input variable numbers
         
@@ -1055,7 +1038,16 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
             for var in elements:
                 newElements.add(self.reassignVariable(var, numInVars, outVars, newOutVars))
             self.maxList[i] = (newElements, newOutVar)
-            
+
+        # Adjust backward equations:
+        newAccumulatedGrad = defaultdict(list)
+        for k in self.accumulatedGrad:
+            new_k = self.reassignVariable(k, numInVars, outVars, newOutVars)
+            for v, coeff in self.accumulatedGrad[k]:
+                new_v = self.reassignVariable(v, numInVars, outVars, newOutVars)
+                newAccumulatedGrad[new_k].append((new_v, coeff))
+        self.accumulatedGrad = newAccumulatedGrad
+
         # Adjust upper/lower bounds
         newLowerBounds = dict()
         newUpperBounds = dict()
