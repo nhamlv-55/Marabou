@@ -39,9 +39,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
     def render_dot(self, name:str ='output')->None:
         self.dotGraph.render(name)
 
-    def add_dot_node(self, name: str, label: str):
-        self.dotGraph.node(name, "{}:\n{}".format(name, label))
-        print("Add {}:{} to dotgraph".format(name, label))
     
     def clear(self):
         """Reset values to represent empty network
@@ -188,7 +185,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         for iname in inNodeNames:
             inputNode = self.getNode(iname)
             self.add_dot_node(iname, inputNode.name)
-            self.dotGraph.edge(iname, nodeName)
         if node.op_type == 'Constant':
             self.constant(node)
         elif node.op_type == 'Identity': 
@@ -746,12 +742,10 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                             e.addAddend(input1[i][k], input2[k][j])
                             #accumulate grad
                             self.accumulatedGrad[input2[k][j]].append((outputVariables[i][j], input1[i][k]))
-                            self.dotGraph.edge("v"+str(input2[k][j]), "v"+str(outputVariables[i][j]))
                         else:
                             e.addAddend(input2[k][j], input1[i][k])
                             print(input1[i][k])
                             self.accumulatedGrad[input1[i][k]].append((outputVariables[i][j], input2[k][j]))
-                            self.dotGraph.edge("v"+str(input1[i][k]), "v"+str(outputVariables[i][j]))
                     # Put output variable as the last addend last
                     e.addAddend(-1, outputVariables[i][j])
                     e.setScalar(0.0)
@@ -761,11 +755,9 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                 for k in range(shape1[1]):
                     if firstInputConstant:
                         e.addAddend(input1[i][k], input2[k])
-                        self.dotGraph.edge("v"+str(input1[i][k]), "v"+str(outputVariables[i]))
                     else:
                         e.addAddend(input2[k], input1[i][k])
                         #add edge to dot graph
-                        self.dotGraph.edge("v"+str(input2[k]), "v"+str(outputVariables[i]))
                 # Put output variable as the last addend last
                 e.addAddend(-1, outputVariables[i])
                 e.setScalar(0.0)
@@ -930,7 +922,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         # Generate equations
         for i in range(len(inputVars)):
             self.addRelu(inputVars[i], outputVars[i])
-            self.dotGraph.edge("v"+str(inputVars[i]), "v"+str(outputVars[i]))
         for f in outputVars:
             self.setLowerBound(f, 0.0)
 
