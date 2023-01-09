@@ -321,7 +321,7 @@ class MarabouNetwork:
         return ipq
 
 
-    def addBackwardQuery(self, target:int)->MarabouCore.InputQuery:
+    def addBackwardQuery(self)->MarabouCore.InputQuery:
         self.forward_ipq.setNumberOfVariables(self.numVars*2)
         print("adding backward queries...")
         print("output names", self.outputVars)
@@ -330,6 +330,7 @@ class MarabouNetwork:
         offset = self.numVars
 
         #set linear grad constraints
+        assert len(self.accumulatedGrad.keys())>0
         for gradv in self.accumulatedGrad:
             addendList = self.accumulatedGrad[gradv]
             eq = MarabouUtils.Equation(MarabouCore.Equation.EQ)
@@ -376,23 +377,7 @@ class MarabouNetwork:
         # #set output grad bounds to either 1 or 0
         # offset = self.numVars 
         # assert len(self.outputVars)==1
-        print(self.lowerBounds)
 
-
-
-        for i, outputVar in enumerate(self.outputVars[0]):
-            if i == target:
-                OUTGRAD = 1
-            else:
-                OUTGRAD = 0
-            print("setting bounds for", outputVar+offset)
-            self.lowerBounds[outputVar+offset] = OUTGRAD
-            self.upperBounds[outputVar+offset] = OUTGRAD
-            self.forward_ipq.setLowerBound(outputVar+offset, OUTGRAD)
-            self.forward_ipq.setUpperBound(outputVar+offset, OUTGRAD)
-
-        print(self.lowerBounds)
-        MarabouCore.saveQuery(self.forward_ipq, "dumpedQueryWithBackward")
         return self.forward_ipq
 
     def solve(self, filename="", verbose=True, options=None):
