@@ -22,6 +22,7 @@
 
 #include <cfloat>
 #include <cmath>
+#include <iostream>
 
 #ifdef _WIN32
 #undef max
@@ -86,6 +87,10 @@ public:
         return !isNegative( x - y, epsilon );
     }
 
+    static bool gte_consistentBounds( double x, double y, double epsilon = GlobalConfiguration::DEFAULT_EPSILON_FOR_COMPARISONS*10 )
+    {
+        return !isNegative( x - y, epsilon );
+    }
     static bool lt( double x, double y, double epsilon = GlobalConfiguration::DEFAULT_EPSILON_FOR_COMPARISONS )
     {
         return gt( y, x, epsilon );
