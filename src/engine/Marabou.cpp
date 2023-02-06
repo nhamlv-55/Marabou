@@ -211,6 +211,7 @@ void Marabou::displayResults( unsigned long long microSecondsElapsed ) const
     if ( result == Engine::UNSAT )
     {
         resultString = "unsat";
+        _engine.dumpVariableMapping(_inputQuery.getNumberOfVariables());
         printf( "unsat\n" );
     }
     else if ( result == Engine::SAT )
