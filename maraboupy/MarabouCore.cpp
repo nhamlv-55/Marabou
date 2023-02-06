@@ -550,6 +550,7 @@ PYBIND11_MODULE(MarabouCore, m) {
           py::arg("inputQuery"), py::arg("disjuncts"));
     py::class_<InputQuery>(m, "InputQuery")
         .def(py::init())
+        .def(py::init<InputQuery const&>())
         .def("setUpperBound", &InputQuery::setUpperBound)
         .def("setLowerBound", &InputQuery::setLowerBound)
         .def("getUpperBound", &InputQuery::getUpperBound)

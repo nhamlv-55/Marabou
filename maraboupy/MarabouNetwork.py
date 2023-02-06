@@ -72,7 +72,8 @@ class MarabouNetwork:
         self.outputVars = []
 
         #keep the forward Input Query
-        self.forward_ipq = MarabouCore.InputQuery()
+        self.forward_ipq: MarabouCore.InputQuery
+        self.FB_ipq: MarabouCore.InputQuery #the forward + backward query
 
     def clearProperty(self):
         """Clear the lower bounds and upper bounds map, and the self.additionEquList
@@ -249,7 +250,10 @@ class MarabouNetwork:
         e.setScalar(scalar)
         self.addEquation(e, isProperty)
 
-    def getMarabouQuery(self):
+    def getMarabouQuery(self, legacy:bool = True)->MarabouCore.InputQuery:
+        return self.getForwardQuery()
+
+    def getForwardQuery(self)->MarabouCore.InputQuery:
         """Function to convert network into Marabou InputQuery
 
         Returns:
@@ -322,10 +326,13 @@ class MarabouNetwork:
 
 
     def addBackwardQuery(self)->MarabouCore.InputQuery:
-        self.forward_ipq.setNumberOfVariables(self.numVars*2)
+        self.FB_ipq = MarabouCore.InputQuery(self.forward_ipq)
+
+        self.FB_ipq.setNumberOfVariables(self.numVars*2)
         print("adding backward queries...")
         print("output names", self.outputVars)
-        print("accumulated grad", self.accumulatedGrad)
+        with open("accumulated_grad.txt", "w") as f:
+            f.write(str(self.accumulatedGrad))
         #backward equations
         offset = self.numVars
 
@@ -339,8 +346,7 @@ class MarabouNetwork:
                 eq.addAddend(c,int(v)+offset)
             eq.addAddend(-1, int(gradv)+offset)
             eq.setScalar(0)
-            print(eq)
-            self.forward_ipq.addEquation(eq.toCoreEquation())
+            self.FB_ipq.addEquation(eq.toCoreEquation())
 
         #set Relu constraints: XXX: a placeholder just for now
         for i in range(len(self.reluList)):
@@ -360,7 +366,7 @@ class MarabouNetwork:
             pos_grad_disjunction = [[pos_condition.toCoreEquation()], 
                                     [pos_body.toCoreEquation()]]
             print("IF POSITIVE:", pos_condition, "OR", pos_body)
-            MarabouCore.addDisjunctionConstraint(self.forward_ipq, pos_grad_disjunction)
+            MarabouCore.addDisjunctionConstraint(self.FB_ipq, pos_grad_disjunction)
             #negative grad
             neg_condition = MarabouUtils.Equation(MarabouCore.Equation.GE)
             neg_condition.addAddend(1, self.reluList[i][0]); 
@@ -372,13 +378,13 @@ class MarabouNetwork:
             neg_grad_disjunction = [[neg_condition.toCoreEquation()],
                                     [neg_body.toCoreEquation()]]
             print("IF NEGATIVE:", neg_condition, "OR", neg_body)
-            MarabouCore.addDisjunctionConstraint(self.forward_ipq, neg_grad_disjunction)
+            MarabouCore.addDisjunctionConstraint(self.FB_ipq, neg_grad_disjunction)
 
         # #set output grad bounds to either 1 or 0
         # offset = self.numVars 
         # assert len(self.outputVars)==1
 
-        return self.forward_ipq
+        return self.FB_ipq
 
     def solve(self, filename="", verbose=True, options=None):
         """Function to solve query represented by this network
@@ -394,7 +400,7 @@ class MarabouNetwork:
                 - vals (Dict[int, float]): Empty dictionary if UNSAT, otherwise a dictionary of SATisfying values for variables
                 - stats (:class:`~maraboupy.MarabouCore.Statistics`): A Statistics object to how Marabou performed
         """
-        ipq = self.getMarabouQuery()
+        ipq = self.getForwardQuery()
         if options == None:
             options = MarabouCore.Options()
         exitCode, vals, stats = MarabouCore.solve(ipq, options, str(filename))
@@ -507,7 +513,7 @@ class MarabouNetwork:
         Args:
             filename: (string) file to write serialized inputQuery
         """
-        ipq = self.getMarabouQuery()
+        ipq = self.getForwardQuery()
         MarabouCore.saveQuery(ipq, str(filename))
 
     def evaluateWithMarabou(self, inputValues, filename="evaluateWithMarabou.log", options=None):
@@ -534,7 +540,7 @@ class MarabouNetwork:
         for x in assignList:
             inputDict[x[0]] = x[1]
 
-        ipq = self.getMarabouQuery()
+        ipq = self.getForwardQuery()
         for k in inputDict:
             ipq.setLowerBound(k, inputDict[k])
             ipq.setUpperBound(k, inputDict[k])
@@ -552,7 +558,7 @@ class MarabouNetwork:
             for j in range(len(outputValues[i])):
                 outputValues[i][j] = outputDict[outputValues[i][j]]
             outputValues[i] = outputValues[i].reshape(outputVars[i].shape)
-        return outputValues
+        return outputValues, outputDict
 
     def evaluate(self, inputValues, useMarabou=True, options=None, filename="evaluateWithMarabou.log"):
         """Function to evaluate network at a given point
