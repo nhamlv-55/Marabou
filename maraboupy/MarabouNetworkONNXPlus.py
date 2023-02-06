@@ -11,7 +11,7 @@ directory for licensing information.
 
 MarabouNetworkONNX represents neural networks with piecewise linear constraints derived from the ONNX format
 '''
-
+import torch
 from collections import defaultdict
 import numpy as np
 import onnx
@@ -36,9 +36,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
     def __init__(self, filename, inputNames=None, outputNames=None):
         super().__init__()
         self.readONNX(filename, inputNames, outputNames)
-    def render_dot(self, name:str ='output')->None:
-        self.dotGraph.render(name)
-
     
     def clear(self):
         """Reset values to represent empty network
@@ -597,7 +594,28 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                     e.setScalar(-biases[k])
                     self.addEquation(e)
         
-    def gemmEquations(self, node, makeEquations):  
+    def gemmEquations(self, node, makeEquations):
+        """
+        Inject our model here
+        """
+        class MNISTFakeNet(torch.nn.Module):
+
+            def __init__(self):
+                super().__init__()
+                self.fc1 = torch.nn.Linear(28*28, 256)
+                self.dropout = torch.nn.Dropout()
+                self.fc2 = torch.nn.Linear(256, 256)
+                self.fc3 = torch.nn.Linear(256, 10)
+                self.relu = torch.nn.ReLU()
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                x = x.view(-1, 28*28)
+                x = self.dropout(self.relu(self.fc1(x)))
+                x = self.dropout(self.relu(self.fc2(x)))
+                x = self.fc3(x)
+                return x
+
+
+
         """Function to generate equations corresponding to Gemm (general matrix multiplication)
 
         Args:
@@ -637,7 +655,12 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         self.shapeMap[nodeName] = outShape
         if not makeEquations:
             return
-        
+
+        print("alpha", alpha)
+        print("beta", beta)
+        print("transA", transA)
+        print("transB", transB)
+
         # Assume that first input is variables, second is Matrix for MatMul, and third is bias addition
         input1 = self.varMap[inputName1]
         input2 = self.constantMap[inputName2]
@@ -656,8 +679,27 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
 
         # Create new variables
         outputVariables = self.makeNewVariables(nodeName)
-
+        print("outputVarShape", outputVariables.shape)
         # Generate forward equations
+        print("shape1", shape1)
+        print("shape2", shape2)
+
+        load_fake_net = False
+        if load_fake_net:
+            fake_net = MNISTFakeNet()
+            fake_net.eval()
+            fake_net.load_state_dict(torch.load("model1673967689.4435592.pth"))
+            print(fake_net.fc1.weight, fake_net.fc1.weight.shape)
+            if shape2[0]==784 and shape2[1]==256:
+                input2 = np.transpose(fake_net.fc1.weight.detach().numpy())
+                input3 = np.broadcast_to(fake_net.fc1.bias.detach().numpy(), outShape)
+            elif shape2[0]==256 and shape2[1]==256:
+                input2 = np.transpose(fake_net.fc2.weight.detach().numpy())
+                input3 = np.broadcast_to(fake_net.fc2.bias.detach().numpy(), outShape)
+            elif shape2[0]==256 and shape2[1]==10:
+                input2 = np.transpose(fake_net.fc3.weight.detach().numpy())
+                input3 = np.broadcast_to(fake_net.fc3.bias.detach().numpy(), outShape)
+
         for i in range(shape1[0]):
             for j in range(shape2[1]):
                 #forward equation
@@ -735,7 +777,6 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                             self.accumulatedGrad[input2[k][j]].append((outputVariables[i][j], input1[i][k]))
                         else:
                             e.addAddend(input2[k][j], input1[i][k])
-                            print(input1[i][k])
                             self.accumulatedGrad[input1[i][k]].append((outputVariables[i][j], input2[k][j]))
                     # Put output variable as the last addend last
                     e.addAddend(-1, outputVariables[i][j])
