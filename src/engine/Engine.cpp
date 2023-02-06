@@ -190,6 +190,9 @@ bool Engine::solve( unsigned timeoutInSeconds )
 
     bool splitJustPerformed = true;
     struct timespec mainLoopStart = TimeUtils::sampleMicro();
+
+
+
     while ( true )
     {
         struct timespec mainLoopEnd = TimeUtils::sampleMicro();
@@ -714,8 +717,9 @@ bool Engine::performSimplexStep()
                 // The current solution is optimal.
                 return true;
             }
-            else
+            else{
                 throw InfeasibleQueryException();
+            }
         }
     }
 
@@ -1581,6 +1585,52 @@ void Engine::extractSolution( InputQuery &inputQuery )
         }
     }
 }
+
+
+void Engine::dumpVariableMapping( unsigned numberOfVar) const 
+{
+    std::cerr<<"-----dump variable mapping---"<<std::endl;
+
+    for ( unsigned i = 0; i < numberOfVar; ++i )
+    {
+        if ( _preprocessingEnabled )
+        {
+            // Has the variable been merged into another?
+            unsigned variable = i;
+            std::cerr<<variable<<"<-";
+            while ( _preprocessor.variableIsMerged( variable ) ){
+                variable = _preprocessor.getMergedIndex( variable );
+                std::cerr<<"merged with "<<variable<<std::endl;
+            }
+            // // Fixed variables are easy: return the value they've been fixed to.
+            // if ( _preprocessor.variableIsFixed( variable ) )
+            // {
+            //     inputQuery.setSolutionValue( i, _preprocessor.getFixedValue( variable ) );
+            //     inputQuery.setLowerBound( i, _preprocessor.getFixedValue( variable ) );
+            //     inputQuery.setUpperBound( i, _preprocessor.getFixedValue( variable ) );
+            //     continue;
+            // }
+
+            // We know which variable to look for, but it may have been assigned
+            // a new index, due to variable elimination
+            variable = _preprocessor.getNewIndex( variable );
+            std::cerr<<"<---"<<variable<<std::endl;
+            // // Finally, set the assigned value
+            // inputQuery.setSolutionValue( i, _tableau->getValue( variable ) );
+            // inputQuery.setLowerBound( i, _tableau->getLowerBound( variable ) );
+            // inputQuery.setUpperBound( i, _tableau->getUpperBound( variable ) );
+        }
+        else
+        {
+        //     inputQuery.setSolutionValue( i, _tableau->getValue( i ) );
+        //     inputQuery.setLowerBound( i, _tableau->getLowerBound( i ) );
+        //     inputQuery.setUpperBound( i, _tableau->getUpperBound( i ) );
+        }
+    }
+}
+
+
+
 
 bool Engine::allVarsWithinBounds() const
 {

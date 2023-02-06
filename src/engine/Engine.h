@@ -229,6 +229,10 @@ public:
 
     void setRandomSeed( unsigned seed );
 
+    /*
+      Dump the variable mapping so we know which variable is violated
+    */
+   void dumpVariableMapping(unsigned numberOfVar) const;
 private:
 
     enum BasisRestorationRequired {
