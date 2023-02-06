@@ -589,6 +589,8 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                                     c = weights[k][dk][di][dj]
                                     e.addAddend(c, var)
 
+                                    self.accumulatedGrad[var].append((outVars[0][k][i][j], c))
+
                     # Add output variable
                     e.addAddend(-1, outVars[0][k][i][j])
                     e.setScalar(-biases[k])
