@@ -72,7 +72,10 @@ public:
         DEBUG_ASSIGNMENT,
 
         // Produce proofs of unsatisfiability and check them
-        PRODUCE_PROOFS
+        PRODUCE_PROOFS,
+
+        // Use different epsilons for comparison at different places
+        DYNAMIC_EPS,
     };
 
     enum IntOptions {

@@ -97,6 +97,9 @@ void OptionParser::initialize()
         ( "export-assignment",
           boost::program_options::bool_switch( &((*_boolOptions)[Options::EXPORT_ASSIGNMENT]) )->default_value( (*_boolOptions)[Options::EXPORT_ASSIGNMENT] ),
           "Export a satisfying assignment if found." )
+        ( "dynamic-eps",
+          boost::program_options::bool_switch( &((*_boolOptions)[Options::DYNAMIC_EPS]) )->default_value( (*_boolOptions)[Options::DYNAMIC_EPS] ),
+          "Use different epsilons for comparison at different places" )
         ( "export-assignment-file",
           boost::program_options::value<std::string>( &(*_stringOptions)[Options::EXPORT_ASSIGNMENT_FILE_PATH] )->default_value( (*_stringOptions)[Options::EXPORT_ASSIGNMENT_FILE_PATH] ),
           "Specifies a file to export the assignment." )
