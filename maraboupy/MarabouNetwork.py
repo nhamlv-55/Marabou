@@ -21,7 +21,6 @@ from maraboupy import MarabouCore
 from maraboupy import MarabouUtils
 from collections import defaultdict
 import numpy as np
-import graphviz as gv
 class MarabouNetwork:
     """Abstract class representing general Marabou network
     
@@ -59,8 +58,6 @@ class MarabouNetwork:
         self.signList = []
         self.disjunctionList = []
 
-        #dotgraph
-        self.dotGraph = gv.Digraph()
 
         #constraints for gradient
         self.reluList = []
@@ -73,7 +70,14 @@ class MarabouNetwork:
 
         #keep the forward Input Query
         self.forward_ipq: MarabouCore.InputQuery
-        self.FB_ipq: MarabouCore.InputQuery #the forward + backward query
+
+        #the list of constraints for the backward computation
+        self.backward_constraints: List[List[MarabouUtils.Equation]] = []
+
+        #the forward and backward query
+        self.FB_ipq: MarabouCore.InputQuery
+
+
 
     def clearProperty(self):
         """Clear the lower bounds and upper bounds map, and the self.additionEquList
@@ -324,12 +328,27 @@ class MarabouNetwork:
         self.forward_ipq = ipq
         return ipq
 
-
     def addBackwardQuery(self)->MarabouCore.InputQuery:
+        if len(self.backward_constraints)==0: self.buildBackwardConstraints()
+
         self.FB_ipq = MarabouCore.InputQuery(self.forward_ipq)
 
         self.FB_ipq.setNumberOfVariables(self.numVars*2)
         print("adding backward queries...")
+        c: List[MarabouUtils.Equation]
+        for c in self.backward_constraints:
+            if len(c)==1: #a linear constraint
+                self.FB_ipq.addEquation(c[0].toCoreEquation())
+            else:
+                assert(len(c)==2)
+                disjunct = [[c[0].toCoreEquation()],
+                            [c[1].toCoreEquation()]]
+                MarabouCore.addDisjunctionConstraint(self.FB_ipq, disjunct)
+
+        return self.FB_ipq
+
+    def buildBackwardConstraints(self)->None:
+
         print("output names", self.outputVars)
         with open("accumulated_grad.txt", "w") as f:
             f.write(str(self.accumulatedGrad))
@@ -346,9 +365,9 @@ class MarabouNetwork:
                 eq.addAddend(c,int(v)+offset)
             eq.addAddend(-1, int(gradv)+offset)
             eq.setScalar(0)
-            self.FB_ipq.addEquation(eq.toCoreEquation())
+            self.backward_constraints.append([eq])
 
-        #set Relu constraints: XXX: a placeholder just for now
+        #set Relu constraints:
         for i in range(len(self.reluList)):
             #example: v10 = relu(v7)
             #grad constraints:
@@ -363,10 +382,14 @@ class MarabouNetwork:
             pos_body.addAddend(1, self.reluList[i][0]+offset)
             pos_body.addAddend(-1, self.reluList[i][1]+offset)
             pos_body.setScalar(0)
-            pos_grad_disjunction = [[pos_condition.toCoreEquation()], 
-                                    [pos_body.toCoreEquation()]]
+
+            self.backward_constraints.append([pos_condition, pos_body])
             print("IF POSITIVE:", pos_condition, "OR", pos_body)
-            MarabouCore.addDisjunctionConstraint(self.FB_ipq, pos_grad_disjunction)
+
+            # pos_grad_disjunction = [[pos_condition.toCoreEquation()], 
+            #                         [pos_body.toCoreEquation()]]
+            # MarabouCore.addDisjunctionConstraint(self.FB_ipq, pos_grad_disjunction)
+            
             #negative grad
             neg_condition = MarabouUtils.Equation(MarabouCore.Equation.GE)
             neg_condition.addAddend(1, self.reluList[i][0]); 
@@ -375,16 +398,15 @@ class MarabouNetwork:
             neg_body = MarabouUtils.Equation(MarabouCore.Equation.EQ)
             neg_body.addAddend(1, self.reluList[i][0]+offset)
             neg_body.setScalar(0)
-            neg_grad_disjunction = [[neg_condition.toCoreEquation()],
-                                    [neg_body.toCoreEquation()]]
+
+            self.backward_constraints.append([neg_condition, neg_body])
             print("IF NEGATIVE:", neg_condition, "OR", neg_body)
-            MarabouCore.addDisjunctionConstraint(self.FB_ipq, neg_grad_disjunction)
+            
+            # neg_grad_disjunction = [[neg_condition.toCoreEquation()],
+            #                         [neg_body.toCoreEquation()]]
+            # MarabouCore.addDisjunctionConstraint(self.FB_ipq, neg_grad_disjunction)
 
-        # #set output grad bounds to either 1 or 0
-        # offset = self.numVars 
-        # assert len(self.outputVars)==1
-
-        return self.FB_ipq
+        # return self.FB_ipq
 
     def solve(self, filename="", verbose=True, options=None):
         """Function to solve query represented by this network
