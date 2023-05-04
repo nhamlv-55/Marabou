@@ -236,7 +236,8 @@ public:
       Dump the variable mapping so we know which variable is violated
     */
     void dumpVariableMapping(unsigned numberOfVar) const;
-    */
+    
+    /*
       Returns true iff the engine is in proof production mode
     */
     bool shouldProduceProofs() const;
