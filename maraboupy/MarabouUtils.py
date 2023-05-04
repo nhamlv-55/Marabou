@@ -15,6 +15,7 @@ MarabouUtils contains supporting Maraboupy code that doesn't fit in other files
 
 from maraboupy import MarabouCore
 from typing import List, Tuple
+
 class Equation:
     """Python class to conveniently represent :class:`~maraboupy.MarabouCore.Equation`
 
@@ -73,3 +74,54 @@ class Equation:
             terms.append("{}*var_{} ".format(addend[0], addend[1]))
         lhs = " + ".join(terms)
         return "{} {} {}".format(lhs, sign, rhs)
+
+class ReLUGradEquation:
+    """
+    Given v_out = ReLU(v_in)
+    The corresponding g_in can be computed knowing g_out and v_out
+
+    This is the class to convenietly represent the disjuct computing 
+    g_in
+    """
+    def __init__(self, v_in: int, v_out: int, g_in: int, g_out: int):
+        """
+        Construct the disjunct of 2 MarabouUtils.Equation
+        """
+        assert v_in < v_out
+        assert g_in - v_in == g_out - v_out
+        self.disjunct: List[List[Equation]] = []
+        #example: v10 = relu(v7)
+        #grad constraints:
+        #if v7 > 0 then g7 = g10 ~ (g7=g10)or(v7<=0): pos_grad constraints
+        #v7<=0 then g7 = 0 ~ (g7=0) or (v7 >= 0)
+        #positive grad
+        pos_condition = Equation(MarabouCore.Equation.LE)
+        pos_condition.addAddend(1, v_in); 
+        pos_condition.setScalar(0)
+
+        pos_body = Equation(MarabouCore.Equation.EQ)
+        pos_body.addAddend(1, g_in)
+        pos_body.addAddend(-1, g_out)
+        pos_body.setScalar(0)
+
+        self.disjunct.append([pos_condition, pos_body])
+        print("IF POSITIVE:", pos_condition, "OR", pos_body)
+
+        
+        #negative grad
+        neg_condition = Equation(MarabouCore.Equation.GE)
+        neg_condition.addAddend(1, v_in); 
+        neg_condition.setScalar(0)
+
+        neg_body = Equation(MarabouCore.Equation.EQ)
+        neg_body.addAddend(1, g_in)
+        neg_body.setScalar(0)
+
+        self.disjunct.append([neg_condition, neg_body])
+        print("IF NEGATIVE:", neg_condition, "OR", neg_body)
+
+    def abstract(self, v_in_bounds: List[float],
+                 v_out_bounds: List[float],
+                 g_out_bounds: List[float])->List[Equation]:
+        abstraction: List[Equation] = []
+        return abstraction
