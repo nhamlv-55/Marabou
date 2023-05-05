@@ -997,7 +997,7 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
             if nodeName not in self.varMap and nodeName not in self.constantMap:
                 self.shapeMap.pop(nodeName)
                 
-    def reassignVariable(self, var, numInVars, outVars, newOutVars):
+    def reassignVariable(self, var:int, numInVars:int, outVars, newOutVars):
         """Reassign output variable so that output variables follow input variables
 
         This function computes what the given variable should be when the output variables are 
@@ -1082,11 +1082,22 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
         self.lowerBounds = newLowerBounds
         self.upperBounds = newUpperBounds
 
+        # Adjust variables in intermediate nodes
+        for node in self.varMap:
+            if node in self.outputNames or node in self.inputNames:
+                continue
+            new_v = []
+            #NHAM: we assume that all immediate nodes are smaller than the output node
+            assert np.max(self.varMap[node]) < np.min(outVars) 
+            f = lambda x: x + len([outVar for outVar in outVars])
+            self.varMap[node] = f(self.varMap[node])
+
         # Assign output variables to the new array
         for outputName in self.outputNames:
             numVars = len(self.varMap[outputName].reshape(-1))
             self.varMap[outputName] = newOutVars[:numVars].reshape(self.shapeMap[outputName])
             newOutVars = newOutVars[numVars:]
+
 
         self.outputVars = [self.varMap[outputName] for outputName in self.outputNames]
     
