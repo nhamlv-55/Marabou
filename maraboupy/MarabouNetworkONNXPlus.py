@@ -1088,7 +1088,7 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
                 continue
             new_v = []
             #NHAM: we assume that all immediate nodes are smaller than the output node
-            assert np.max(self.varMap[node]) < np.min(outVars) 
+            assert np.max(self.varMap[node]) < np.min(outVars), print(node, self.varMap) 
             f = lambda x: x + len([outVar for outVar in outVars])
             self.varMap[node] = f(self.varMap[node])
 
@@ -1098,6 +1098,10 @@ class MarabouNetworkONNXPlus(MarabouNetwork.MarabouNetwork):
             self.varMap[outputName] = newOutVars[:numVars].reshape(self.shapeMap[outputName])
             newOutVars = newOutVars[numVars:]
 
+        #create the varMap for gradient
+        forward_nodes = list(self.varMap.keys())
+        for node in forward_nodes:
+            self.varMap[f"grad_{node}"] = self.varMap[node] + self.numVars
 
         self.outputVars = [self.varMap[outputName] for outputName in self.outputNames]
     
