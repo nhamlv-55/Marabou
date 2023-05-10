@@ -298,39 +298,7 @@ bool BoundManager::consistentBounds(unsigned variable) const
 
     bool isConsistent = FloatUtils::gte(ub, lb);
 
-    if (Options::get()->getBool(Options::DYNAMIC_EPS))
-    {
-        if (FloatUtils::isZero(ub*0.0001) && FloatUtils::isZero(lb*0.0001))
-        {
-            std::cerr << "SNAPPED TO 0" << std::endl;
-            _upperBounds[variable] = 0;
-            _lowerBounds[variable] = 0;
-            return true;
-        }
-        // if (!isConsistent)
-        // {
-        //     bool isAlmostConsistent = FloatUtils::gte_consistentBounds(ub, lb, GlobalConfiguration::DEFAULT_EPSILON_FOR_COMPARISONS * 10000);
-        //     std::cerr << "CURRENT VAR" << variable << std::endl;
-        //     std::cerr << "CURRENT UPPER:" << ub << std::endl;
-        //     std::cerr << "CURRENT LOWER:" << lb << std::endl;
-        //     std::cerr << "TRY TO SNAP TO ub!..." << std::endl;
-
-        //     double zero_thres = GlobalConfiguration::DEFAULT_EPSILON_FOR_COMPARISONS;
-        //     if (isAlmostConsistent)
-        //     {
-
-        //         std::cerr << "SNAPPED TO UB!" << std::endl;
-        //         _upperBounds[variable] = ub;
-        //         _lowerBounds[variable] = ub;
-        //         return true;
-        //     }
-        // }
-        // return isConsistent;
-    }
-    else
-    {
-        return isConsistent;
-    }
+    return isConsistent;
 }
 
 void BoundManager::registerTableau(ITableau *ptrTableau)
