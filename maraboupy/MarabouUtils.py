@@ -15,6 +15,9 @@ MarabouUtils contains supporting Maraboupy code that doesn't fit in other files
 
 from maraboupy import MarabouCore
 from typing import List, Tuple
+from maraboupy.MarabouNetwork import ZERO
+
+
 
 class Equation:
     """Python class to conveniently represent :class:`~maraboupy.MarabouCore.Equation`
@@ -48,6 +51,7 @@ class Equation:
         """
         self.addendList += [(c, x)]
     def toCoreEquation(self)->MarabouCore.Equation:
+        print(self)
         eq = MarabouCore.Equation(self.EquationType)
         for (c, v) in self.addendList:
             eq.addAddend(c, v)
@@ -89,6 +93,10 @@ class ReLUGradEquation:
         """
         assert v_in < v_out
         assert g_in - v_in == g_out - v_out
+        self.g_in = g_in #we need this to keep track of what ReLU to be abstracted
+        self.g_out = g_out
+        self.v_in = v_in
+        self.v_out = v_out
         self.disjunct: List[List[Equation]] = []
         #example: v10 = relu(v7)
         #grad constraints:
@@ -97,7 +105,7 @@ class ReLUGradEquation:
         #positive grad
         pos_condition = Equation(MarabouCore.Equation.LE)
         pos_condition.addAddend(1, v_in); 
-        pos_condition.setScalar(0)
+        pos_condition.setScalar(-ZERO)
 
         pos_body = Equation(MarabouCore.Equation.EQ)
         pos_body.addAddend(1, g_in)
