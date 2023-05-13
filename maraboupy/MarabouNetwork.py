@@ -21,6 +21,9 @@ from maraboupy import MarabouCore
 from maraboupy import MarabouUtils
 from collections import defaultdict
 import numpy as np
+from typing import List, Dict, Tuple
+ZERO = 10**-5
+
 class MarabouNetwork:
     """Abstract class representing general Marabou network
     
@@ -73,6 +76,9 @@ class MarabouNetwork:
 
         #the list of constraints for the backward computation
         self.backward_constraints: List[MarabouUtils.Equation | MarabouUtils.ReLUGradEquation] = []
+
+        #the list of gradient nodes corresponding to pre-ReLU value
+        self.grad_ins: List[int] = []
 
         #the forward and backward query
         self.FB_ipq: MarabouCore.InputQuery
@@ -328,12 +334,12 @@ class MarabouNetwork:
         self.forward_ipq = ipq
         return ipq
 
-    def addBackwardQuery(self)->MarabouCore.InputQuery:
-        if len(self.backward_constraints)==0: self.buildBackwardConstraints()
+    def addBackwardQuery(self, to_be_abstracted: List[int], fused_bounds: Dict[int, Tuple[float, float]])->MarabouCore.InputQuery:
+        print("To be abstracted", to_be_abstracted)
+        if len(to_be_abstracted)>0:
+            assert len(fused_bounds) > 0, "Must run .fusion() first if we want to use abstraction"
+        assert len(self.backward_constraints)>0, "Must build backward constraints before calling this function"
 
-        self.FB_ipq = MarabouCore.InputQuery(self.forward_ipq)
-
-        self.FB_ipq.setNumberOfVariables(self.numVars*2)
         print("adding backward queries...")
         c: MarabouUtils.Equation | MarabouUtils.ReLUGradEquation
         for c in self.backward_constraints:
@@ -344,18 +350,65 @@ class MarabouNetwork:
                 assert len(c.disjunct)==2
                 assert len(c.disjunct[0])==2
                 assert len(c.disjunct[1])==2
-                pos_disjunct = [[c.disjunct[0][0].toCoreEquation()],
-                            [c.disjunct[0][1].toCoreEquation()]]
-                neg_disjunct = [[c.disjunct[1][0].toCoreEquation()],
-                            [c.disjunct[1][1].toCoreEquation()]]
+                if c.g_in in to_be_abstracted:
+                    print(f"abstracting the computation of {c.g_in}")
+
+                    g_in = c.g_in
+                    g_out = c.g_out
+                    v_in = c.v_in
+
+                    g_out_lower, g_out_upper = fused_bounds[g_out]
+                    v_in_lower, v_in_upper = fused_bounds[v_in]
+                    print(g_out_lower, g_out_upper, v_in_lower, v_in_upper)
+                    #case 1: v_in_upper < 0: the gradient must be 0
+                    if v_in_upper <0:
+                        self.FB_ipq.setLowerBound(g_in, 0)
+                        self.FB_ipq.setUpperBound(g_in, 0)
+                    #case 2: g_out_lower > 0. g_in < g_out and g_in >=0
+                    elif g_out_lower > 0:
+                        self.FB_ipq.setLowerBound(g_in, 0)
+                        c1 = MarabouUtils.Equation(MarabouCore.Equation.LE)
+                        c1.addAddend(1,g_in)
+                        c1.addAddend(-1, g_out)
+                        c1.setScalar(-ZERO)
+                        self.FB_ipq.addEquation(c1.toCoreEquation())
+                    #case 3: g_out_uper < 0. g_in >= g_out and g_in <=0
+                    elif g_out_upper < 0:
+                        self.FB_ipq.setUpperBound(g_in, 0)
+                        c1 = MarabouUtils.Equation(MarabouCore.Equation.GE)
+                        c1.addAddend(1, g_in)
+                        c1.addAddend(-1, g_out)
+                        c1.setScalar(ZERO)
+                        self.FB_ipq.addEquation(c1.toCoreEquation())
+                    else:
+                        assert g_out_upper >0 and g_out_lower <0
+                        c1 = MarabouUtils.Equation(MarabouCore.Equation.LE)
+                        c1.addAddend((g_out_upper - g_out_lower)/g_out_upper, g_in)
+                        c1.addAddend(-1, g_out)
+                        c1.setScalar(-g_out_lower)
+                        self.FB_ipq.addEquation(c1.toCoreEquation())
+
+                        c2 = MarabouUtils.Equation(MarabouCore.Equation.GE)
+                        c2.addAddend((g_out_upper - g_out_lower)/g_out_lower, g_in)
+                        c2.addAddend(-1, g_out)
+                        c2.setScalar(-g_out_upper)
+                        self.FB_ipq.addEquation(c2.toCoreEquation())
+
+                else:
+                    pos_disjunct = [[c.disjunct[0][0].toCoreEquation()],
+                                [c.disjunct[0][1].toCoreEquation()]]
+                    neg_disjunct = [[c.disjunct[1][0].toCoreEquation()],
+                                [c.disjunct[1][1].toCoreEquation()]]
 
                 
-                MarabouCore.addDisjunctionConstraint(self.FB_ipq, pos_disjunct)
-                MarabouCore.addDisjunctionConstraint(self.FB_ipq, neg_disjunct)
+                    MarabouCore.addDisjunctionConstraint(self.FB_ipq, pos_disjunct)
+                    MarabouCore.addDisjunctionConstraint(self.FB_ipq, neg_disjunct)
 
         return self.FB_ipq
 
     def buildBackwardConstraints(self)->None:
+        self.FB_ipq = MarabouCore.InputQuery(self.forward_ipq)
+        self.FB_ipq.setNumberOfVariables(self.numVars*2)
 
         print("output names", self.outputVars)
         with open("accumulated_grad.txt", "w") as f:
@@ -383,6 +436,7 @@ class MarabouNetwork:
                                                                  v_out = relu[1],
                                                                  g_in = relu[0]+offset,
                                                                  g_out = relu[1]+offset) 
+            self.grad_ins.append(relu[0]+offset)
             self.backward_constraints.append(relu_grad_constraint)
            
     def solve(self, filename="", verbose=True, options=None):
